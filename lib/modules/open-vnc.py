@@ -29,7 +29,7 @@ class Module(BaseModule):
         # run nmap, once for each required port
 
         # {ip: [ports, with, open, vnc]}
-        vulnerable_hosts = dict()
+        vulnerable_hosts = {}
 
         for port in self.required_ports:
 
@@ -49,25 +49,37 @@ class Module(BaseModule):
 
                         f.write(host['IP Address'] + '\n')
                         valid_targets += 1
-        
+
             if valid_targets <= 0:
-                print('\n[+] No systems to scan for open VNC on port {}'.format(port))
+                print(f'\n[+] No systems to scan for open VNC on port {port}')
 
             else:
-                command = ['nmap', '-p{}'.format(port), '-T4', '-n', '-Pn', '-v', '-sV', \
-                    '--script=vnc-info', '-oA', output_file, \
-                    '-iL', targets_file]
+                command = [
+                    'nmap',
+                    f'-p{port}',
+                    '-T4',
+                    '-n',
+                    '-Pn',
+                    '-v',
+                    '-sV',
+                    '--script=vnc-info',
+                    '-oA',
+                    output_file,
+                    '-iL',
+                    targets_file,
+                ]
+
 
                 print('\n[+] Scanning {:,} systems for open VNC on port {}:\n\t> {}\n'.format(valid_targets, port, ' '.join(command)))
 
                 try:
                     self.process = sp.run(command, check=True)
                 except sp.CalledProcessError as e:
-                    sys.stderr.write('[!] Error launching Nmap: {}\n'.format(str(e)))
+                    sys.stderr.write(f'[!] Error launching Nmap: {str(e)}\n')
                     sys.exit(1)
 
                 # parse xml
-                tree = xml.parse(output_file + '.xml')
+                tree = xml.parse(f'{output_file}.xml')
 
                 for host in tree.findall('host'):
 
@@ -83,19 +95,21 @@ class Module(BaseModule):
                     if ip is None:
                         continue
 
-                    else:
-                        for nmap_ports in host.findall('ports'):
-                            for nmap_port in nmap_ports.findall('port'):
-                                for script in nmap_port.findall('script'):
-                                    if script.attrib['id'] == 'vnc-info':
-                                        if 'does not require auth' in script.attrib['output']:
-                                            inventory.hosts[ip].update({'Open VNC': 'Yes'})
-                                            try:
-                                                vulnerable_hosts[ip].add(port)
-                                            except KeyError:
-                                                vulnerable_hosts[ip] = {port,}
+                    for nmap_ports in host.findall('ports'):
+                        for nmap_port in nmap_ports.findall('port'):
+                            for script in nmap_port.findall('script'):
+                                if (
+                                    script.attrib['id'] == 'vnc-info'
+                                    and 'does not require auth'
+                                    in script.attrib['output']
+                                ):
+                                    inventory.hosts[ip].update({'Open VNC': 'Yes'})
+                                    try:
+                                        vulnerable_hosts[ip].add(port)
+                                    except KeyError:
+                                        vulnerable_hosts[ip] = {port,}
 
-                print('[+] Saved Nmap VNC results to {}.*'.format(output_file))
+                print(f'[+] Saved Nmap VNC results to {output_file}.*')
 
 
         if vulnerable_hosts:
@@ -105,19 +119,28 @@ class Module(BaseModule):
             for ip, ports in vulnerable_hosts.items():
                 for port in ports:
 
-                    filename = self.work_dir / 'vnc_{}_{}_screenshot.jpg'.format(ip, port)
+                    filename = self.work_dir / f'vnc_{ip}_{port}_screenshot.jpg'
 
-                    vnc_command = ['vncsnapshot', '-allowblank', '-cursor', '-quality', '75', '{}::{}'.format(ip, port), str(filename)]                    
-                    print('\t> {}'.format(' '.join(vnc_command)))
+                    vnc_command = [
+                        'vncsnapshot',
+                        '-allowblank',
+                        '-cursor',
+                        '-quality',
+                        '75',
+                        f'{ip}::{port}',
+                        str(filename),
+                    ]
+
+                    print(f"\t> {' '.join(vnc_command)}")
 
                     try:
                         process = sp.run(vnc_command, stdout=sp.DEVNULL, stderr=sp.DEVNULL, timeout=15)
 
                     except sp.TimeoutExpired:
-                        sys.stderr.write('[!] VNC screenshot timed out on {}\n'.format(ip))
+                        sys.stderr.write(f'[!] VNC screenshot timed out on {ip}\n')
 
                     if filename.is_file():
-                        print('[+] Screenshot saved to {}'.format(filename))
+                        print(f'[+] Screenshot saved to {filename}')
 
 
 
@@ -144,8 +167,7 @@ class Module(BaseModule):
 
         vulnerable = 'N/A'
         try:
-            c = csv_line['Open VNC'].strip()
-            if c:
+            if c := csv_line['Open VNC'].strip():
                 vulnerable = c
         except KeyError:
             pass

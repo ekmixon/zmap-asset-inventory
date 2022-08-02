@@ -179,11 +179,12 @@ def main(options):
         z.write_csv(csv_file=stray_hosts_csv, hosts=stray_hosts)
 
         # if more than 5 percent of hosts are strays, or you have more than one stray network
-        if len(z.hosts) > 0:
-            if len(stray_hosts)/len(z.hosts) > .05 or len(stray_networks) > 1:
-                print('')
-                print(' "Your asset management is bad and you should feel bad"')
-                print('\n')
+        if len(z.hosts) > 0 and (
+            len(stray_hosts) / len(z.hosts) > 0.05 or len(stray_networks) > 1
+        ):
+            print('')
+            print(' "Your asset management is bad and you should feel bad"')
+            print('\n')
 
 
     # make a deliverable spreadsheet if requested
@@ -229,8 +230,7 @@ def parse_target_args(targets):
         for network in network_list:
             networks.add(network)
 
-    networks = list(networks)
-    networks.sort()
+    networks = sorted(networks)
     return networks
 
 
@@ -251,7 +251,14 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--ports', nargs='+', type=int,                   help='port-scan online hosts')
     parser.add_argument('-n', '--no-dns',           action='store_true',        help='do not perform reverse DNS lookups')
     parser.add_argument('--force-dns',              action='store_true',        help='force dns lookups while loading cache')
-    parser.add_argument('-B', '--bandwidth', default=default_bandwidth,         help='max egress bandwidth (default {})'.format(default_bandwidth), metavar='STR')
+    parser.add_argument(
+        '-B',
+        '--bandwidth',
+        default=default_bandwidth,
+        help=f'max egress bandwidth (default {default_bandwidth})',
+        metavar='STR',
+    )
+
     parser.add_argument('-i', '--interface',                                    help='interface from which to scan (e.g. eth0)', metavar='IFC')
     parser.add_argument('-G', '--gateway-mac',                                  help='MAC address of default gateway', metavar='MAC')
     parser.add_argument('--blacklist',                                          help='a file containing hosts to exclude from scanning', metavar='FILE')
@@ -261,10 +268,30 @@ if __name__ == '__main__':
     parser.add_argument('-Pn', '--skip-ping',       action='store_true',        help='skip zmap host-discovery')
     parser.add_argument('--force-ping',             action='store_true',        help='force a new zmap ping sweep')
     parser.add_argument('--force-syn',              action='store_true',        help='SYN scan hosts which have already been scanned')
-    parser.add_argument('-M', '--modules', nargs='*',   default=[],             help='Module for additional checks such as EternalBlue (pick from {})'.format(', '.join(detected_modules + ['all', '*'])))
-    parser.add_argument('--work-dir', type=Path,    default=default_work_dir,   help='custom working directory (default {})'.format(default_work_dir), metavar='DIR')
+    parser.add_argument(
+        '-M',
+        '--modules',
+        nargs='*',
+        default=[],
+        help=f"Module for additional checks such as EternalBlue (pick from {', '.join(detected_modules + ['all', '*'])})",
+    )
+
+    parser.add_argument(
+        '--work-dir',
+        type=Path,
+        default=default_work_dir,
+        help=f'custom working directory (default {default_work_dir})',
+        metavar='DIR',
+    )
+
     parser.add_argument('-d', '--diff',             type=Path,                  help='show differences between scan results and IPs/networks from file', metavar='FILE')
-    parser.add_argument('--netmask',      type=int, default=default_cidr_mask,  help='summarize networks with this CIDR mask (default {})'.format(default_cidr_mask))
+    parser.add_argument(
+        '--netmask',
+        type=int,
+        default=default_cidr_mask,
+        help=f'summarize networks with this CIDR mask (default {default_cidr_mask})',
+    )
+
     parser.add_argument('--make-deliverable',       action='store_true',        help='combine all data gathered for each host into a deliverable CSV file')
 
     try:
@@ -275,24 +302,30 @@ if __name__ == '__main__':
         # make sure we have valid targets
         assert options.targets, 'No valid targets'
         # make sure ports are specified if there's no ping sweep
-        assert not (options.skip_ping and not options.ports), 'Please specify port(s) to scan with -p'
+        assert (
+            not options.skip_ping or options.ports
+        ), 'Please specify port(s) to scan with -p'
+
         # make sure there's no conflicting options
         assert not (options.skip_ping and options.force_ping), 'Conflicting options: --force-ping and --skip-ping'
 
         assert 0 <= options.netmask <= 32, 'Invalid netmask'
 
-        valid_module_chars = string.ascii_lowercase + '-'
+        valid_module_chars = f'{string.ascii_lowercase}-'
         options.modules = [''.join([c for c in module.lower() if c in valid_module_chars]) for module in options.modules]
-        if any([x in options.modules for x in ['all', '*']]):
+        if any(x in options.modules for x in ['all', '*']):
             options.modules = detected_modules
-        elif not all([module in detected_modules for module in options.modules]):
-            raise AssertionError('Invalid module name, please pick from the following: {}'.format(', '.join(detected_modules)))
+        elif any(module not in detected_modules for module in options.modules):
+            raise AssertionError(
+                f"Invalid module name, please pick from the following: {', '.join(detected_modules)}"
+            )
+
 
         main(options)
 
 
     except (argparse.ArgumentError, AssertionError) as e:
-        sys.stderr.write('\n[!] {}\n\n'.format(str(e)))
+        sys.stderr.write(f'\n[!] {str(e)}\n\n')
         sys.exit(2)
 
     except KeyboardInterrupt:

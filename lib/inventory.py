@@ -24,22 +24,22 @@ class Inventory:
         # target-specific open port counters
         # nested dictionary in format:
         # { target: { port: open_count ... } ... }
-        self.targets = dict()
+        self.targets = {}
         for target in targets:
             try:
-                self.targets[ipaddress.ip_network(target)] = dict()
+                self.targets[ipaddress.ip_network(target)] = {}
             except ValueError:
-                raise ValueError('Invalid target: {}'.format(str(target)))
+                raise ValueError(f'Invalid target: {str(target)}')
 
         # global open port counters
         # dictionary in format:
         # { port: open_count ... }
-        self.open_ports                 = dict()
+        self.open_ports = {}
 
         # stores all known hosts
         # dictionary in format:
         # { ip_address(): Host() ... }
-        self.hosts                      = dict()
+        self.hosts = {}
 
         self.modules                    = []
         self.active_modules             = []
@@ -51,14 +51,14 @@ class Inventory:
         if interface is None:
             self.interface_arg          = []
         elif interface.startswith('tun'):
-            self.interface_arg          = ['--interface={}'.format(str(interface)), '--vpn']
+            self.interface_arg = [f'--interface={str(interface)}', '--vpn']
         else:
-            self.interface_arg          = ['--interface={}'.format(str(interface))]
+            self.interface_arg = [f'--interface={str(interface)}']
 
         if gateway_mac is None:
             self.gateway_mac_arg        = []
         else:
-            self.gateway_mac_arg        = ['--gateway-mac={}'.format(str(gateway_mac))]
+            self.gateway_mac_arg = [f'--gateway-mac={str(gateway_mac)}']
 
         self.zmap_ping_targets          = set()
         self.eternal_blue_count         = 0
@@ -81,27 +81,45 @@ class Inventory:
 
     def start(self):
 
-        if self.zmap_ping_targets and not self.primary_zmap_started and \
-            ((not self.skip_ping) or (self.force_ping)):
+        if (
+            not self.zmap_ping_targets
+            or self.primary_zmap_started
+            or self.skip_ping
+            and not self.force_ping
+        ):
+            return
+        self._check_root()
 
-            self._check_root()
+        self.primary_zmap_started = True
 
-            self.primary_zmap_started = True
+        zmap_command = (
+            (
+                (
+                    [
+                        'zmap',
+                        '--cooldown-time=3',
+                        f'--blacklist-file={self.blacklist_arg}',
+                        f'--bandwidth={self.bandwidth}',
+                        '--probe-module=icmp_echoscan',
+                    ]
+                    + self.interface_arg
+                )
+                + self.gateway_mac_arg
+            )
+            + self.whitelist_arg
+        ) + (
+            [] if self.whitelist_arg else [str(t) for t in self.zmap_ping_targets]
+        )
 
-            zmap_command = ['zmap', '--cooldown-time=3', '--blacklist-file={}'.format(self.blacklist_arg), \
-                '--bandwidth={}'.format(self.bandwidth), \
-                '--probe-module=icmp_echoscan'] + self.interface_arg + \
-                self.gateway_mac_arg + self.whitelist_arg + \
-                ([] if self.whitelist_arg else [str(t) for t in self.zmap_ping_targets])
 
-            print('\n[+] Running zmap ping scan:\n\t> {}\n'.format(' '.join(zmap_command)))
+        print(f"\n[+] Running zmap ping scan:\n\t> {' '.join(zmap_command)}\n")
 
-            try:
-                self.primary_zmap_process = sp.Popen(zmap_command, stdout=sp.PIPE)
-            except sp.CalledProcessError as e:
-                sys.stderr.write('[!] Error launching zmap: {}\n'.format(str(e)))
-                sys.stderr.flush()
-                sys.exit(1)
+        try:
+            self.primary_zmap_process = sp.Popen(zmap_command, stdout=sp.PIPE)
+        except sp.CalledProcessError as e:
+            sys.stderr.write(f'[!] Error launching zmap: {str(e)}\n')
+            sys.stderr.flush()
+            sys.exit(1)
 
 
     def stop(self):
@@ -144,12 +162,15 @@ class Inventory:
 
         # make sure the right programs are installed
         for module in list(self.active_modules):
-            progs_to_install = module.check_progs()
-            if progs_to_install:
+            if progs_to_install := module.check_progs():
                 self.active_modules.remove(module)
-                sys.stderr.write('\n[!] Error running module "{}"\n'.format(module.name))
+                sys.stderr.write(f'\n[!] Error running module "{module.name}"\n')
                 sys.stderr.write('[!] Please ensure the following are installed and in your $PATH:\n')
-                sys.stderr.write('\n'.join([('     - ' + str(e)) for e in progs_to_install]) + '\n\n')
+                sys.stderr.write(
+                    '\n'.join([f'     - {str(e)}' for e in progs_to_install])
+                    + '\n\n'
+                )
+
 
         for module in self.active_modules:
             self._check_root()
@@ -201,20 +222,19 @@ class Inventory:
 
     def scan_online_hosts(self, port):
 
-        # make sure host discovery has finished
-        for h in self:
-            pass
-
         port = int(port)
         zmap_out_file = self.work_dir / 'zmap/zmap_port_{}_{date:%Y-%m-%d_%H-%M-%S}.txt'.format(port, date=datetime.now())
-        zmap_whitelist_file = self.work_dir / 'zmap/zmap_tmp_whitelist_port_{}.txt'.format(port)
+        zmap_whitelist_file = (
+            self.work_dir / f'zmap/zmap_tmp_whitelist_port_{port}.txt'
+        )
+
         targets = [t[0] for t in self.targets.items() if port not in t[1]]
 
         # fill target-specific port counts
         # so we at least know they're scanned
         # necessary because currently all targets are wrapped together
         for target in targets:
-            if not port in self.targets[target]:
+            if port not in self.targets[target]:
                 self.targets[target][port] = 0
 
         if self.whitelist_arg:
@@ -224,7 +244,7 @@ class Inventory:
             zmap_targets = [str(t) for t in self.targets]
 
         else:
-            zmap_targets = ['--whitelist-file={}'.format(zmap_whitelist_file)]
+            zmap_targets = [f'--whitelist-file={zmap_whitelist_file}']
             # write target IPs to file for zmap
             hosts_written = 0
             with open(str(zmap_whitelist_file), 'w') as f:
@@ -241,36 +261,44 @@ class Inventory:
                                 #print(str(ip), ' is in ', str(target))
                                 hosts_written += 1
                                 f.write(str(ip) + '\n')
-                            else:
-                                #print(str(ip), ' is not in ', str(target))
-                                pass
-
             if hosts_written <= 0:
-                print('[+] No hosts to scan on port {}'.format(port))
+                print(f'[+] No hosts to scan on port {port}')
                 return (None, 0)
             else:
                 print('[+] Scanning {:,} hosts on port {}'.format(hosts_written, port))
 
         self.secondary_zmap_started = True
 
-        # run the ping scan if it hasn't already completed
-        for host in self:
-            pass
-
         if not zmap_targets:
-            print('[!] No targets to scan on port {}'.format(port))
+            print(f'[!] No targets to scan on port {port}')
             return (None, 0)
 
         else:
 
             self._check_root()
 
-            zmap_command = ['zmap', '--cooldown-time=3', '--blacklist-file={}'.format(self.blacklist_arg), \
-                '--bandwidth={}'.format(self.bandwidth), '--target-port={}'.format(port)] + \
-                self.gateway_mac_arg + self.interface_arg + self.whitelist_arg + \
-                ([] if self.whitelist_arg else zmap_targets)
+            zmap_command = (
+                (
+                    (
+                        [
+                            'zmap',
+                            '--cooldown-time=3',
+                            f'--blacklist-file={self.blacklist_arg}',
+                            f'--bandwidth={self.bandwidth}',
+                            f'--target-port={port}',
+                        ]
+                        + self.gateway_mac_arg
+                    )
+                    + self.interface_arg
+                )
+                + self.whitelist_arg
+            ) + ([] if self.whitelist_arg else zmap_targets)
 
-            print('\n[+] Running zmap SYN scan on port {}:\n\t> {}\n'.format(port, ' '.join(zmap_command)))
+
+            print(
+                f"\n[+] Running zmap SYN scan on port {port}:\n\t> {' '.join(zmap_command)}\n"
+            )
+
 
             try:
 
@@ -289,10 +317,15 @@ class Inventory:
                             continue
 
                         # make sure the host exists
-                        if not ip in self.hosts:
+                        if ip not in self.hosts:
                             self.hosts[ip] = Host(ip)
 
-                        print('[+] {:<23}{:<10}'.format('{}:{}'.format(str(ip), port), self.hosts[ip]['Hostname']))
+                        print(
+                            '[+] {:<23}{:<10}'.format(
+                                f'{str(ip)}:{port}', self.hosts[ip]['Hostname']
+                            )
+                        )
+
 
                         # write IP to file even if the port was found previously
                         # for scanning eternal blue, etc.
@@ -304,7 +337,7 @@ class Inventory:
                             new_ports_found = True
 
                 if not new_ports_found:
-                    print('[!] No new hosts found with port {} open'.format(port))
+                    print(f'[!] No new hosts found with port {port} open')
 
                 if open_port_count > 0:
                     try:
@@ -313,7 +346,7 @@ class Inventory:
                         self.open_ports[port] = open_port_count
 
             except sp.CalledProcessError as e:
-                sys.stderr.write('[!] Error launching zmap: {}\n'.format(str(e)))
+                sys.stderr.write(f'[!] Error launching zmap: {str(e)}\n')
                 sys.exit(1)
 
             finally:
@@ -335,8 +368,8 @@ class Inventory:
         self.work_dir               = Path(work_dir)
 
         # validate bandwidth arg
-        if not any([self.bandwidth.endswith(s) for s in ['K', 'M', 'G']]):
-            raise ValueError('Invalid bandwidth: {}'.format(self.bandwidth))
+        if not any(self.bandwidth.endswith(s) for s in ['K', 'M', 'G']):
+            raise ValueError(f'Invalid bandwidth: {self.bandwidth}')
 
 
         ### BLACKLIST ###
@@ -351,16 +384,16 @@ class Inventory:
         else:
             self.blacklist_arg = Path(blacklist).resolve()
             if not self.blacklist_arg.is_file():
-                raise ValueError('Cannot process blacklist file: {}'.format(str(self.blacklist_arg)))
+                raise ValueError(f'Cannot process blacklist file: {str(self.blacklist_arg)}')
             else:
                 self.blacklist_arg = str(self.blacklist_arg)
 
             with open(self.blacklist_arg) as f:
-                for line in f.readlines():
+                for line in f:
                     line = line.strip()
                     try:
                         entry = ipaddress.ip_network(line, strict=False)
-                        if not entry in self.blacklist:
+                        if entry not in self.blacklist:
                             self.blacklist.append(entry)
                     except ValueError:
                         continue
@@ -380,16 +413,16 @@ class Inventory:
         else:
             self.whitelist_file = Path(whitelist).resolve()
             if not self.whitelist_file.is_file():
-                raise ValueError('Cannot process whitelist file: {}'.format(self.whitelist_file))
+                raise ValueError(f'Cannot process whitelist file: {self.whitelist_file}')
             else:
-                self.whitelist_arg = ['--whitelist-file={}'.format(str(self.whitelist_file))]
+                self.whitelist_arg = [f'--whitelist-file={str(self.whitelist_file)}']
 
             with open(self.whitelist_file) as f:
-                for line in f.readlines():
+                for line in f:
                     line = line.strip()
                     try:
                         entry = ipaddress.ip_network(line, strict=False)
-                        if not entry in self.whitelist:
+                        if entry not in self.whitelist:
                             self.whitelist.append(entry)
                     except ValueError:
                         continue
@@ -418,16 +451,16 @@ class Inventory:
                             sub_ranges.add(network)
 
                 except ValueError as e:
-                    print('[!] Bad entry in {}:'.format(str(sub_host_file)))
-                    print('     {}'.format(str(e)))
+                    print(f'[!] Bad entry in {str(sub_host_file)}:')
+                    print(f'     {str(e)}')
 
 
-        hosts = set([ipaddress.ip_address(i) for i in self.hosts])
+        hosts = {ipaddress.ip_address(i) for i in self.hosts}
 
-        stray_networks = dict()
+        stray_networks = {}
         for h in hosts:
             host_net = ipaddress.ip_network((h, netmask), strict=False)
-            if not any([self._net_in_net(host_net, s) for s in sub_ranges]):
+            if not any(self._net_in_net(host_net, s) for s in sub_ranges):
                 try:
                     stray_networks[host_net] += 1
                 except KeyError:
@@ -450,18 +483,14 @@ class Inventory:
                     for network in str_to_network(line):
                         sub_ranges.add(network)
                 except ValueError as e:
-                    print('[!] Bad entry in {}:'.format(str(sub_host_file)))
-                    print('     {}'.format(str(e)))
+                    print(f'[!] Bad entry in {str(sub_host_file)}:')
+                    print(f'     {str(e)}')
 
         master_ranges = [i[0] for i in self.summarize_online_hosts()]
 
         hosts = [ipaddress.ip_address(i) for i in self.hosts]
 
-        stray_hosts = []
-        for h in hosts:
-            if not any([h in s for s in sub_ranges]):
-                stray_hosts.append(h)
-
+        stray_hosts = [h for h in hosts if all(h not in s for s in sub_ranges)]
         stray_hosts.sort()
         return stray_hosts
 
@@ -472,11 +501,11 @@ class Inventory:
         if hosts is None:
             hosts = self.hosts
 
-        subnets = dict()
+        subnets = {}
 
         for ip in hosts:
 
-            subnet = ipaddress.ip_network(str(ip) + '/{}'.format(netmask), strict=False)
+            subnet = ipaddress.ip_network(str(ip) + f'/{netmask}', strict=False)
 
             try:
                 subnets[subnet] += 1
@@ -492,10 +521,6 @@ class Inventory:
         try:
 
             csv_writer, f = self._make_csv_writer(csv_file)
-
-            # make sure initial discovery scan has completed
-            for host in self:
-                pass
 
             with open(self.online_hosts_file, 'w') as f:
                 for host in self.hosts_sorted(hosts):
@@ -515,7 +540,7 @@ class Inventory:
 
         try:
             # dictionary in the form { ip_network: (csv_writer, csv_file_handle) }
-            targets = dict()
+            targets = {}
 
             for target in self.targets:
                 target_id = str(target).replace('/', '-')
@@ -559,12 +584,12 @@ class Inventory:
 
                 try:
                     target_net = ipaddress.ip_network(target_dir.replace('-', '/'))
-                    print('[+] Found folder: {}'.format(str(self.work_dir / target_dir)))
+                    print(f'[+] Found folder: {str(self.work_dir / target_dir)}')
                 except ValueError:
                     # print('[!] Found invalid cached folder: {}, skipping'.format(str(target_dir)))
                     continue
 
-                if not any([target_net == t for t in self.targets]):
+                if all(target_net != t for t in self.targets):
                     print('[i]  - directory does not match any given target')
 
                 else:
@@ -583,11 +608,9 @@ class Inventory:
 
                                 if not empty_file:
                                     print('[+]  - contains cached data'.format(str(target_net)))
-                                    cached_targets.append(target_net)
                                 else:
                                     print('[+]  - empty (use --force-ping to scan again)')
-                                    cached_targets.append(target_net)
-
+                                cached_targets.append(target_net)
                     except StopIteration:
                         continue
 
@@ -597,7 +620,7 @@ class Inventory:
         print('[+] Loaded {:,} hosts from cache'.format(len(self.hosts)))
 
         for target in self.targets:
-            if not target in cached_targets or self.force_ping:
+            if target not in cached_targets or self.force_ping:
                 self.zmap_ping_targets.add(target)
 
 
@@ -612,7 +635,7 @@ class Inventory:
 
         new_hosts = 0
         empty_file = True
-        open_ports = dict()
+        open_ports = {}
 
         with open(str(csv_file), newline='') as f:
             c = csv.DictReader(f)
@@ -644,7 +667,7 @@ class Inventory:
                     if key.endswith('/tcp'):
                         port = int(key.split('/')[0])
                         if value.lower() == 'open':
-                            if not port in self.open_ports:
+                            if port not in self.open_ports:
                                 self.open_ports[port] = 0
 
                             if port not in self.hosts[ip].open_ports:
@@ -656,11 +679,11 @@ class Inventory:
                             except KeyError:
                                 open_ports[port] = 1
 
-                    # all other values are loaded here, to preserve module output between executions
-                    # even if the module is not loaded
-                    # currently, a module's read_host() method is not needed
-                    #elif value:
-                    #    host.update({key: value})
+                                # all other values are loaded here, to preserve module output between executions
+                                # even if the module is not loaded
+                                # currently, a module's read_host() method is not needed
+                                #elif value:
+                                #    host.update({key: value})
 
 
         return (empty_file, open_ports)
@@ -684,7 +707,7 @@ class Inventory:
         fieldnames = ['IP Address', 'Hostname']
         for m in self.modules:
             fieldnames += m.csv_headers
-        fieldnames += ['{}/tcp'.format(port) for port in self.open_ports]
+        fieldnames += [f'{port}/tcp' for port in self.open_ports]
 
         csv_writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
         csv_writer.writeheader()
@@ -698,7 +721,7 @@ class Inventory:
         if ports is None:
             ports = self.open_ports
 
-        if not type(host) == Host:
+        if type(host) != Host:
             try:
                 host = self.hosts[ipaddress.ip_address(host)]
             except ValueError:
@@ -727,11 +750,11 @@ class Inventory:
                     if ip in target:
                 TypeError: 'in <string>' requires string as left operand, not IPv4Address
                 '''
-                print('target: {}, {}'.format(str(target), str(type(target))))
-                print(str(e))
+                print(f'target: {str(target)}, {str(type(target))}')
+                print(e)
                 continue
 
-        open_ports = dict()
+        open_ports = {}
         for port in ports:
             port_state = 'Unknown'
             if port in host.open_ports:
@@ -741,14 +764,14 @@ class Inventory:
                     #print(str(port), ' is in ', str(self.targets))
                     port_state = 'Closed'
 
-            open_ports['{}/tcp'.format(port)] = port_state
+            open_ports[f'{port}/tcp'] = port_state
 
         host.update(open_ports)
         try:
             csv_writer.writerow(host)
         except ValueError as e:
             # port is in self.open_ports but not in self.targets
-            print('[!] {}'.format(str(e)))
+            print(f'[!] {str(e)}')
 
 
 
@@ -767,7 +790,7 @@ class Inventory:
 
             net_range = net_ranges[i]
             # if network doesn't overlap with any larger ones
-            if not any([net_range.overlaps(n) for n in net_ranges[i+1:]]):
+            if not any(net_range.overlaps(n) for n in net_ranges[i + 1 :]):
                 deduplicated_ranges.append(net_range)
 
         return deduplicated_ranges
@@ -784,12 +807,14 @@ class Inventory:
         elif type(host) == Host:
             host = host.ip
 
-        if not any([host in network for network in self.blacklist]):
-            if not self.whitelist or any([host in network for network in self.whitelist]):
-                if any([host in target for target in self.targets]):
-                    return True
-
-        return False
+        return (
+            all(host not in network for network in self.blacklist)
+            and (
+                not self.whitelist
+                or any(host in network for network in self.whitelist)
+            )
+            and any(host in target for target in self.targets)
+        )
 
 
     def _check_root(self):

@@ -14,18 +14,17 @@ def str_to_network(s):
 
     try:
         if '-' in s:
-            if s.count('-') == 1:
-                start, end = [p.strip() for p in s.split('-')[:2]]
-                for i in ipaddress.summarize_address_range(ipaddress.ip_address(start), ipaddress.ip_address(end)):
-                    yield i
-            else:
+            if s.count('-') != 1:
                 raise ValueError()
-        else:
-            net = ipaddress.ip_network(s, strict=False)
-            yield net
+            start, end = [p.strip() for p in s.split('-')[:2]]
+            yield from ipaddress.summarize_address_range(
+                ipaddress.ip_address(start), ipaddress.ip_address(end)
+            )
 
+        else:
+            yield ipaddress.ip_network(s, strict=False)
     except ValueError:
-        print('[!] Cannot create host/network from "{}"'.format(str(s)))
+        print(f'[!] Cannot create host/network from "{str(s)}"')
         print('     Accepted formats are:')
         print('      192.168.0.0/24')
         print('      192.168.0.0-192.168.0.255')
@@ -42,11 +41,7 @@ class Host(dict):
         self['IP Address'] = str(ip)
         self['OS'] = 'Unknown'
 
-        if not hostname:
-            self['Hostname'] = ''
-        else:
-            self['Hostname'] = str(hostname)
-
+        self['Hostname'] = str(hostname) if hostname else ''
         self.open_ports = set()
 
         if resolve:

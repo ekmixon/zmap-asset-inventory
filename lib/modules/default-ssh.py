@@ -64,39 +64,46 @@ class Module(BaseModule):
 
             try:
 
-                patator_command = ['patator', 'ssh_login', '--threads={}'.format(self.threads), \
-                    'user=COMBO00', 'password=COMBO01', 'host=FILE1', 
-                    '--max-retries=2', '0={}'.format(self.creds_file),\
-                    '1={}'.format(self.targets_file)]
+                patator_command = [
+                    'patator',
+                    'ssh_login',
+                    f'--threads={self.threads}',
+                    'user=COMBO00',
+                    'password=COMBO01',
+                    'host=FILE1',
+                    '--max-retries=2',
+                    f'0={self.creds_file}',
+                    f'1={self.targets_file}',
+                ]
+
 
                 print('\n[+] Running patator against {:,} targets:\n\t> {}\n'.format(self.num_targets, ' '.join(patator_command)))
 
-                if self.patator_process is None:
-                    self.patator_process = sp.Popen(patator_command, stdout=sp.PIPE, stderr=sp.PIPE)
-                    sleep(2)
-
-                    with open(self.patator_valid_creds, 'w') as valid_creds_file:
-                        with open(self.patator_log_file, 'w') as log_file:
-                            for line in io.TextIOWrapper(self.patator_process.stderr, encoding='utf-8'):
-                                # pass through stdout to log
-                                log_file.write(line)
-                                line = ''.join(line.split('patator')[1:]).strip()
-                                print('\r{}'.format(line), end='')
-                                if 'INFO - 0' in line:
-                                    valid_creds_file.write(line)
-                                    print('\r' + line)
-                                    #try:
-                                    cred_str = line.split()[6]
-                                    creds = ':'.join(cred_str.split(':')[:2])
-                                    ip = ipaddress.ip_address(cred_str.split(':')[-1])
-                                    inventory.hosts[ip].update({'Default SSH Login': creds})
-                                    #except ValueError:
-                                    #    continue
-
-                    self.patator_process = None
-
-                else:
+                if self.patator_process is not None:
                     raise PatatorError('Patator is already running')
+
+                self.patator_process = sp.Popen(patator_command, stdout=sp.PIPE, stderr=sp.PIPE)
+                sleep(2)
+
+                with open(self.patator_valid_creds, 'w') as valid_creds_file:
+                    with open(self.patator_log_file, 'w') as log_file:
+                        for line in io.TextIOWrapper(self.patator_process.stderr, encoding='utf-8'):
+                            # pass through stdout to log
+                            log_file.write(line)
+                            line = ''.join(line.split('patator')[1:]).strip()
+                            print(f'\r{line}', end='')
+                            if 'INFO - 0' in line:
+                                valid_creds_file.write(line)
+                                print('\r' + line)
+                                #try:
+                                cred_str = line.split()[6]
+                                creds = ':'.join(cred_str.split(':')[:2])
+                                ip = ipaddress.ip_address(cred_str.split(':')[-1])
+                                inventory.hosts[ip].update({'Default SSH Login': creds})
+                                #except ValueError:
+                                #    continue
+
+                self.patator_process = None
 
             except KeyboardInterrupt:
                 print('\n\n[!] Cancelling Patator scan, please wait')
@@ -113,7 +120,7 @@ class Module(BaseModule):
 
     def report(self, inventory):
 
-        valid_creds = dict()
+        valid_creds = {}
         for host in inventory:
             try:
                 creds = host['Default SSH Login']
@@ -124,7 +131,12 @@ class Module(BaseModule):
 
         if valid_creds:
             print('[+] {:,} system(s) with default SSH logins:\n\t'.format(len(valid_creds)), end='')
-            print('\n\t'.join(['{} - {}'.format(ip, cred) for ip, cred in list(valid_creds.items())]))
+            print(
+                '\n\t'.join(
+                    [f'{ip} - {cred}' for ip, cred in list(valid_creds.items())]
+                )
+            )
+
         else:
             print('[+] No systems found with default SSH credentials')
         print('')

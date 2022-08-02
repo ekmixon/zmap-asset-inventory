@@ -64,19 +64,19 @@ class Module(BaseModule):
         else:
 
             command = ['nmap', '-p21', '-T4', '-n', '-Pn', '-v', '-sV', \
-                '--script=ftp-anon', '-oA', output_file, \
-                '-iL', targets_file]
+                    '--script=ftp-anon', '-oA', output_file, \
+                    '-iL', targets_file]
 
             print('\n[+] Scanning {:,} system(s) for open FTP:\n\t> {}\n'.format(targets, ' '.join(command)))
 
             try:
                 process = sp.run(command, check=True)
             except sp.CalledProcessError as e:
-                sys.stderr.write('[!] Error launching Nmap FTP scan: {}\n'.format(str(e)))
+                sys.stderr.write(f'[!] Error launching Nmap FTP scan: {str(e)}\n')
                 return
 
             # parse xml
-            tree = xml.parse(output_file + '.xml')
+            tree = xml.parse(f'{output_file}.xml')
 
             for host in tree.findall('host'):
 
@@ -92,18 +92,20 @@ class Module(BaseModule):
                 if ip is None:
                     continue
 
-                else:
-                    inventory.hosts[ip].update({'Open FTP': 'No'})
+                inventory.hosts[ip].update({'Open FTP': 'No'})
 
-                    for nmap_ports in host.findall('ports'):
-                        for nmap_port in nmap_ports.findall('port'):
-                            for script in nmap_port.findall('script'):
-                                if script.attrib['id'] == 'ftp-anon':
-                                    if 'Anonymous FTP login allowed' in script.attrib['output']:
-                                        inventory.hosts[ip].update({'Open FTP': 'Yes'})
-                                        
+                for nmap_ports in host.findall('ports'):
+                    for nmap_port in nmap_ports.findall('port'):
+                        for script in nmap_port.findall('script'):
+                            if (
+                                script.attrib['id'] == 'ftp-anon'
+                                and 'Anonymous FTP login allowed'
+                                in script.attrib['output']
+                            ):
+                                inventory.hosts[ip].update({'Open FTP': 'Yes'})
 
-            print('[+] Saved Nmap FTP scan results to {}.*'.format(output_file))
+
+            print(f'[+] Saved Nmap FTP scan results to {output_file}.*')
             print('\n[+] Finished Nmap FTP scan')
 
 
@@ -122,7 +124,9 @@ class Module(BaseModule):
                         continue
                 except KeyError:
                     pass
-                if 9100 not in host.open_ports and any([port in host.open_ports for port in [139,445]]):
+                if 9100 not in host.open_ports and any(
+                    port in host.open_ports for port in [139, 445]
+                ):
                     f.write(str(host.ip) + '\n')
                     targets += 1
 
@@ -132,21 +136,21 @@ class Module(BaseModule):
         else:
 
             command = ['nmap', '-p139,445', '-T4', '-n', '-Pn', '-v', '-sV', \
-                '--script=smb-enum-shares', '-oA', output_file, \
-                '-iL', targets_file]
+                    '--script=smb-enum-shares', '-oA', output_file, \
+                    '-iL', targets_file]
 
             print('\n[+] Scanning {:,} system(s) for open SMB:\n\t> {}\n'.format(targets, ' '.join(command)))
 
             try:
                 process = sp.run(command, check=True)
             except sp.CalledProcessError as e:
-                sys.stderr.write('[!] Error launching Nmap SMB scan: {}\n'.format(str(e)))
+                sys.stderr.write(f'[!] Error launching Nmap SMB scan: {str(e)}\n')
                 return
 
             print('\n[+] Finished Nmap SMB scan')
 
             # parse xml
-            tree = xml.parse(output_file + '.xml')
+            tree = xml.parse(f'{output_file}.xml')
 
             for host in tree.findall('host'):
 
@@ -162,17 +166,18 @@ class Module(BaseModule):
                 if ip is None:
                     continue
 
-                else:
-                    inventory.hosts[ip].update({'Open SMB': 'No'})
+                inventory.hosts[ip].update({'Open SMB': 'No'})
 
-                    for hostscript in host.findall('hostscript'):
-                        for script in hostscript.findall('script'):
-                            if script.attrib['id'] == 'smb-enum-shares':
-                                if any([keyword in script.attrib['output'] for keyword in ['access: READ', 'access: WRITE']]):
-                                    inventory.hosts[ip].update({'Open SMB': 'Yes'})
-                                    
+                for hostscript in host.findall('hostscript'):
+                    for script in hostscript.findall('script'):
+                        if script.attrib['id'] == 'smb-enum-shares' and any(
+                            keyword in script.attrib['output']
+                            for keyword in ['access: READ', 'access: WRITE']
+                        ):
+                            inventory.hosts[ip].update({'Open SMB': 'Yes'})
 
-            print('[+] Saved Nmap SMB results to {}.*'.format(output_file))
+
+            print(f'[+] Saved Nmap SMB results to {output_file}.*')
             print('\n[+] Finished Nmap SMB scan')
 
 
@@ -200,19 +205,19 @@ class Module(BaseModule):
         else:
 
             command = ['nmap', '-p111', '-T4', '-n', '-Pn', '-v', '-sV', \
-                '--script=nfs-showmount', '-oA', output_file, \
-                '-iL', targets_file]
+                    '--script=nfs-showmount', '-oA', output_file, \
+                    '-iL', targets_file]
 
             print('\n[+] Scanning {:,} system(s) for open NFS:\n\t> {}\n'.format(targets, ' '.join(command)))
 
             try:
                 process = sp.run(command, check=True)
             except sp.CalledProcessError as e:
-                sys.stderr.write('[!] Error launching Nmap NFS scan: {}\n'.format(str(e)))
+                sys.stderr.write(f'[!] Error launching Nmap NFS scan: {str(e)}\n')
                 return
 
             # parse xml
-            tree = xml.parse(output_file + '.xml')
+            tree = xml.parse(f'{output_file}.xml')
 
             for host in tree.findall('host'):
 
@@ -228,18 +233,19 @@ class Module(BaseModule):
                 if ip is None:
                     continue
 
-                else:
-                    inventory.hosts[ip].update({'Open NFS': 'No'})
+                inventory.hosts[ip].update({'Open NFS': 'No'})
 
-                    for nmap_ports in host.findall('ports'):
-                        for nmap_port in nmap_ports.findall('port'):
-                            for script in nmap_port.findall('script'):
-                                if script.attrib['id'] == 'nfs-showmount':
-                                    if '/' in script.attrib['output']:
-                                        inventory.hosts[ip].update({'Open NFS': 'Yes'})
-                                        
+                for nmap_ports in host.findall('ports'):
+                    for nmap_port in nmap_ports.findall('port'):
+                        for script in nmap_port.findall('script'):
+                            if (
+                                script.attrib['id'] == 'nfs-showmount'
+                                and '/' in script.attrib['output']
+                            ):
+                                inventory.hosts[ip].update({'Open NFS': 'Yes'})
 
-            print('[+] Saved Nmap NFS scan results to {}.*'.format(output_file))
+
+            print(f'[+] Saved Nmap NFS scan results to {output_file}.*')
             print('\n[+] Finished Nmap NFS scan')
 
 
@@ -255,7 +261,11 @@ class Module(BaseModule):
                 pass
 
         if vulnerable_hosts:
-            print('[+] {} system(s) with open NFS shares:\n\t'.format(len(vulnerable_hosts)), end='')
+            print(
+                f'[+] {len(vulnerable_hosts)} system(s) with open NFS shares:\n\t',
+                end='',
+            )
+
             print('\n\t'.join([str(h) for h in vulnerable_hosts]))
         else:
             print('[+] No systems found with open NFS shares')
@@ -287,7 +297,7 @@ class Module(BaseModule):
                 pass
 
         if vulnerable_hosts:
-            print('[+] {} system(s) with open FTP:\n\t'.format(len(vulnerable_hosts)), end='')
+            print(f'[+] {len(vulnerable_hosts)} system(s) with open FTP:\n\t', end='')
             print('\n\t'.join([str(h) for h in vulnerable_hosts]))
         else:
             print('[+] No systems with open FTP')

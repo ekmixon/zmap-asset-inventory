@@ -42,10 +42,10 @@ class Module(BaseModule):
         self.lockout_counter = 0
 
         # {ip : 'wmiexec_output'}
-        self.raw_wmiexec_output = dict()
+        self.raw_wmiexec_output = {}
         # {ip: {service: 'Yes'}}
-        self.services = dict()
-        
+        self.services = {}
+
         self.raw_output_file = self.work_dir / 'raw_wmiexec_output_{date:%Y-%m-%d_%H-%M-%S}.txt'.format( date=datetime.now() )
 
 
@@ -57,7 +57,7 @@ class Module(BaseModule):
             futures = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.threads) as executor:
 
-                hosts_to_scan = list([h for h in inventory if 445 in h.open_ports])
+                hosts_to_scan = [h for h in inventory if 445 in h.open_ports]
 
                 if not hosts_to_scan:
                     print('\n[+] No valid targets for service enumeration')
@@ -85,14 +85,14 @@ class Module(BaseModule):
         finally:
             try:
                 if hosts_to_scan:
-                    print('[+] Writing raw command output to {}'.format(self.raw_output_file))
+                    print(f'[+] Writing raw command output to {self.raw_output_file}')
                     with open(self.raw_output_file, 'w') as f:
                         for ip, output in self.raw_wmiexec_output.items():
                             f.write(str(ip) + '\n')
                             f.write('*' * 5 + '\n')
                             f.write(str(output) + '\n')
                             f.write('=' * 5 + '\n')
-            except (NameError, UnboundLocalError):
+            except NameError:
                 pass
 
 
@@ -104,12 +104,12 @@ class Module(BaseModule):
         try:
             result = w.get_services()
         except ServiceEnumException as e:
-            print('[!] Error getting services from {}'.format(str(host)))
-            print(str(e))
+            print(f'[!] Error getting services from {str(host)}')
+            print(e)
             return
         except LogonFailureException as e:
-            print('[!] LOGIN FAILURE ON {}'.format(str(host)))
-            print(str(e))
+            print(f'[!] LOGIN FAILURE ON {str(host)}')
+            print(e)
             # increment lockout counter
             self.lockout_counter += 1
             return
@@ -128,18 +128,18 @@ class Module(BaseModule):
             self.raw_wmiexec_output[ip] = w.raw_stdout + w.raw_stderr
 
         else:
-            print('[!] No output returned from service enumeration of {}'.format(str(self)))
+            print(f'[!] No output returned from service enumeration of {str(self)}')
 
 
 
 
     def report(self, inventory):
 
-        os_stats = dict()
-        service_stats = dict()
+        os_stats = {}
+        service_stats = {}
 
-        service_stats_workstations = dict()
-        service_stats_servers = dict()
+        service_stats_workstations = {}
+        service_stats_servers = {}
 
         hosts_total = 0
         workstations_total = 0
@@ -265,7 +265,7 @@ class Module(BaseModule):
 
             # make sure we have credentials
             if not config['CREDENTIALS']['username'] or not (config['CREDENTIALS']['password'] \
-                or config['CREDENTIALS']['hashes']):
+                    or config['CREDENTIALS']['hashes']):
                 try:
                     ticket_var = Path(os.environ['KRB5CCNAME'])
                     ticket = True
@@ -282,8 +282,7 @@ class Module(BaseModule):
             return config
 
         except (KeyError, TypeError, ValueError) as e:
-            raise ValueError('Problem with services.config at {}'.format(str(config_file)))
-            print('\t' + str(e))
+            raise ValueError(f'Problem with services.config at {str(config_file)}')
 
 
 
@@ -316,16 +315,29 @@ class wmiexec:
                 if target.hostname:
                     self.target = target.hostname
                 else:
-                    raise ValueError('Ticket authentication needs valid hostname, none found for {}, skipping'.format(str(target['IP Address'])))                
-                self.impacket_auth = ['-k', '-no-pass', '{}/{}@{}'.format(self.domain, self.username, str(self.target))]
+                    raise ValueError(
+                        f"Ticket authentication needs valid hostname, none found for {str(target['IP Address'])}, skipping"
+                    )
+
+                self.impacket_auth = [
+                    '-k',
+                    '-no-pass',
+                    f'{self.domain}/{self.username}@{str(self.target)}',
+                ]
+
             except KeyError:
                 raise ValueError('Kerberos ticket not found, please export "KRB5CCNAME" variable')
         elif self.password:
-            self.impacket_auth = ['{}/{}:{}@{}'.format(self.domain, self.username, self.password, self.target)]
-        elif self.hashes:
-            self.impacket_auth = ['-hashes', self.hashes, '{}/{}@{}'.format(self.domain, self.username, self.target)]
+            self.impacket_auth = [
+                f'{self.domain}/{self.username}:{self.password}@{self.target}'
+            ]
+
         else:
-            raise ValueError('Specified authentication method not valid.  Please check services.config.')
+            self.impacket_auth = [
+                '-hashes',
+                self.hashes,
+                f'{self.domain}/{self.username}@{self.target}',
+            ]
 
 
 
@@ -340,17 +352,26 @@ class wmiexec:
             [service_keywords.add(word) for word in service_name.split()]
 
         canary = '!@#'
-        canary_cmd = 'echo {}'.format(canary)
+        canary_cmd = f'echo {canary}'
 
-        win_commands = ['(', canary_cmd, '&', \
-        '''reg query "hklm\\software\\microsoft\\windows nt\\currentversion" /v productname''', '&',
-        canary_cmd, '&', '''sc query | findstr /i "{}"'''.format(' '.join(service_keywords)), ')']
+        win_commands = [
+            '(',
+            canary_cmd,
+            '&',
+            '''reg query "hklm\\software\\microsoft\\windows nt\\currentversion" /v productname''',
+            '&',
+            canary_cmd,
+            '&',
+            f'''sc query | findstr /i "{' '.join(service_keywords)}"''',
+            ')',
+        ]
+
 
         stdout,stderr = self.run_wmiexec(' '.join(win_commands))
 
         if 'STATUS_LOGON_FAILURE' in stdout:
             raise LogonFailureException(stdout + stderr)
-        elif not canary in stdout:
+        elif canary not in stdout:
             raise ServiceEnumException(stdout + stderr)
 
         else:
@@ -361,7 +382,7 @@ class wmiexec:
 
         os_name = ' '.join(os_str[-1].split()[2:])
 
-        services_detected = dict()
+        services_detected = {}
         for (fname, sname) in self.services.items():
             sname = sname.upper()
 
@@ -388,7 +409,7 @@ class wmiexec:
         exec_base = [method] + self.impacket_auth
         exec_command = exec_base + [command]
 
-        print(' >> ' + ' '.join(exec_base) + " '{}'".format(command))
+        print(' >> ' + ' '.join(exec_base) + f" '{command}'")
         try:
             env = dict(os.environ, PYTHONIOENCODING='UTF-8')
             exec_process = sp.run(exec_command, stdout=sp.PIPE, stderr=sp.PIPE, timeout=timeout, env=env)

@@ -37,7 +37,10 @@ class Module(BaseModule):
                     vulnerable = 'N/A'
                 inventory.hosts[ip].update({'Vulnerable to EternalBlue': vulnerable})
 
-                if 445 in host.open_ports and not vulnerable.strip().lower() in ['yes', 'no']:
+                if 445 in host.open_ports and vulnerable.strip().lower() not in {
+                    'yes',
+                    'no',
+                }:
                     targets += 1
                     f.write(str(ip) + '\n')
 
@@ -47,21 +50,21 @@ class Module(BaseModule):
         else:
 
             command = ['nmap', '-p445', '-T4', '-n', '-Pn', '-v', '-sV', \
-                '--script=smb-vuln-ms17-010', '-oA', self.output_file, \
-                '-iL', self.targets_file]
+                    '--script=smb-vuln-ms17-010', '-oA', self.output_file, \
+                    '-iL', self.targets_file]
 
             print('\n[+] Scanning {:,} systems for EternalBlue:\n\t> {}\n'.format(targets, ' '.join(command)))
 
             try:
                 self.process = sp.run(command, check=True)
             except sp.CalledProcessError as e:
-                sys.stderr.write('[!] Error launching EternalBlue Nmap: {}\n'.format(str(e)))
+                sys.stderr.write(f'[!] Error launching EternalBlue Nmap: {str(e)}\n')
                 sys.exit(1)
 
             print('\n[+] Finished EternalBlue Nmap scan')
 
             # parse xml
-            tree = xml.parse(self.output_file + '.xml')
+            tree = xml.parse(f'{self.output_file}.xml')
 
             for host in tree.findall('host'):
 
@@ -77,16 +80,15 @@ class Module(BaseModule):
                 if ip is None:
                     continue
 
-                else:
-                    for hostscript in host.findall('hostscript'):
-                        for script in hostscript.findall('script'):
-                            if script.attrib['id'] == 'smb-vuln-ms17-010':
-                                if 'VULNERABLE' in script.attrib['output']:
-                                    inventory.hosts[ip].update({'Vulnerable to EternalBlue': 'Yes'})
-                                else:
-                                    inventory.hosts[ip].update({'Vulnerable to EternalBlue': 'No'})
+                for hostscript in host.findall('hostscript'):
+                    for script in hostscript.findall('script'):
+                        if script.attrib['id'] == 'smb-vuln-ms17-010':
+                            if 'VULNERABLE' in script.attrib['output']:
+                                inventory.hosts[ip].update({'Vulnerable to EternalBlue': 'Yes'})
+                            else:
+                                inventory.hosts[ip].update({'Vulnerable to EternalBlue': 'No'})
 
-            print('[+] Saved Nmap EternalBlue results to {}.*'.format(self.output_file))
+            print(f'[+] Saved Nmap EternalBlue results to {self.output_file}.*')
 
 
     def report(self, inventory):
@@ -100,7 +102,11 @@ class Module(BaseModule):
                 pass
 
         if vulnerable_hosts:
-            print('[+] {} system(s) vulnerable to EternalBlue:\n\t'.format(len(vulnerable_hosts)), end='')
+            print(
+                f'[+] {len(vulnerable_hosts)} system(s) vulnerable to EternalBlue:\n\t',
+                end='',
+            )
+
             print('\n\t'.join([str(h) for h in vulnerable_hosts]))
         else:
             print('[+] No systems found vulnerable to EternalBlue')

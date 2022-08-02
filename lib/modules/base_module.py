@@ -22,19 +22,12 @@ class BaseModule():
 
     def check_progs(self):
 
-        progs_to_install = []
-        for prog in self.required_progs:
-            if not which(prog):
-                progs_to_install.append(prog)
-
-        return progs_to_install
+        return [prog for prog in self.required_progs if not which(prog)]
 
 
     def run(self, inventory):
 
-        for host in inventory:
-            if 22 in host.open_ports:
-                pass
+        pass
 
 
 
@@ -64,7 +57,6 @@ class BaseModule():
         takes a CSV line and modifies Host() appropriately
         '''
 
-        pass
         '''
         try:
             pass

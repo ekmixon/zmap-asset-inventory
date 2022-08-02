@@ -26,7 +26,7 @@ class Deliverable:
         #    sys.stderr.write('\n[!] Please run "python3 -m pip install openpyxl"\n\n')
         #    return
 
-        hosts = dict()
+        hosts = {}
         fieldnames = []
 
         for file in self.csv_files:
@@ -40,7 +40,10 @@ class Deliverable:
 
                     if c.fieldnames:
                         for field in c.fieldnames:
-                            if not field in fieldnames and not field.lower().endswith('/tcp'):
+                            if (
+                                field not in fieldnames
+                                and not field.lower().endswith('/tcp')
+                            ):
                                 fieldnames.append(field)
 
                     for row in c:
@@ -50,7 +53,7 @@ class Deliverable:
                         ip = ipaddress.ip_address(row['IP Address'])
 
                         # filter out hosts not in the cache
-                        if not ip in self.inventory.hosts:
+                        if ip not in self.inventory.hosts:
                             continue
 
                         for k in list(row):
@@ -66,11 +69,18 @@ class Deliverable:
                         try:
                             ports.update(hosts[ip]['Open Ports'])
                             for k,v in row.items():
-                                if v and not v.lower() in ['unknown', 'n/a', 'closed']:
-                                    # skip if the cell isn't empty
-                                    if k in hosts[ip] and not k.lower() == 'open ports':
-                                        if hosts[ip][k] and not hosts[ip][k].lower() in ['unknown', 'n/a', 'closed']:
-                                            continue
+                                if (
+                                    v
+                                    and v.lower()
+                                    not in ['unknown', 'n/a', 'closed']
+                                    and (
+                                        k not in hosts[ip]
+                                        or k.lower() == 'open ports'
+                                        or not hosts[ip][k]
+                                        or hosts[ip][k].lower()
+                                        in ['unknown', 'n/a', 'closed']
+                                    )
+                                ):
                                     hosts[ip].update({k: v})
 
                         except KeyError:
@@ -80,17 +90,16 @@ class Deliverable:
                             hosts[ip].update({'Open Ports': ports})
 
             except KeyError:
-                sys.stderr.write('[!] Error combining {}\n'.format(file))
+                sys.stderr.write(f'[!] Error combining {file}\n')
                 continue
-            
-        print('[+] Writing combined list to {}'.format(filename))
+
+        print(f'[+] Writing combined list to {filename}')
         with open(filename, newline='', mode='w') as f:
             c = csv.DictWriter(f, fieldnames=fieldnames)
             c.writeheader()
             hosts = list(hosts.items())
             hosts.sort(key=lambda x: x[0])
             for ip, host in hosts:
-                host['Open Ports'] = list(host['Open Ports'])
-                host['Open Ports'].sort()
+                host['Open Ports'] = sorted(host['Open Ports'])
                 host['Open Ports'] = ', '.join([str(p) for p in host['Open Ports']])
                 c.writerow(host)
